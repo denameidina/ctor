@@ -55,6 +55,11 @@ Anda bisa cek command melalui `ctor -h`
 
 #### Command Jira
 
+##### Syarat
+
+Syarat menggunakan command ini untuk menjadi release note dari jira. commit harus berupa convensional commit dengan format `feat(JIRA-KEY): commit message` jika tidak menggunakan format tersebut maka akan dialihkan ke Other.
+- `JIRA-KEY` hanya bisa 1 key untuk 1 commit.
+
 Anda bisa cek command melalui `ctor jira -h` untuk melihat argument lebih lengkap
 
 ```sh

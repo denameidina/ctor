@@ -125,13 +125,14 @@ class JiraCommand extends Command {
     List<String> commits = rawCommits.toString().split('\n')
       ..removeWhere((element) => element.isEmpty);
 
-    final regExp = RegExp(r'^(wip|Wip|WIP)?(.+)\((\w+-\d+)\):\s(.+)');
+    final regExp = RegExp(r'(.+)\((\w+-\d+)\):\s(.+)');
+    final regExpWip = RegExp(r'(wip|WIP|Wip|)');
 
     final jiraTikets = commits.map((e) {
       final match = regExp.firstMatch(e);
-      final isDone = match?.group(1) != null;
-      final code = match?.group(3);
-      final commitMessage = match?.group(4) ?? e.split(':').last.trim();
+      final isDone = !regExpWip.hasMatch(e);
+      final code = match?.group(2);
+      final commitMessage = match?.group(3) ?? e.split(':').last.trim();
 
       return JiraTicket(
         code: code,
@@ -140,9 +141,13 @@ class JiraCommand extends Command {
       );
     }).toList();
 
-    final jqlJiraTiket =
-        List<JiraTicket>.from(jiraTikets).map((e) => e.code ?? '').toSet();
-    jqlJiraTiket.removeWhere((element) => element.isEmpty);
+    final jqlJiraTiket = List<JiraTicket>.from(
+            jiraTikets.where((element) => element.code?.isNotEmpty ?? false))
+        .map((e) => e.code ?? '')
+        .toSet();
+
+    final otherTicket = List<JiraTicket>.from(
+        jiraTikets.where((element) => element.code?.isEmpty ?? true));
 
     try {
       final response = await fetchJiraSearch(
@@ -155,12 +160,22 @@ class JiraCommand extends Command {
       Map<ReleaseNote, List<ReleaseNote>> groupedByParent =
           groupByParent(response?.issues ?? []);
 
+      // With Ticket
       groupedByParent.forEach((parentReleaseNote, childrenReleaseNote) {
         releaseNoteBuffer.writeln(parentReleaseNote.output(output));
         for (var releaseNote in childrenReleaseNote) {
           releaseNoteBuffer.writeln('  - ${releaseNote.output(output)}');
         }
       });
+
+      // Other release note
+      if (otherTicket.isNotEmpty) {
+        releaseNoteBuffer.writeln();
+        releaseNoteBuffer.writeln('Other');
+        for (var element in otherTicket) {
+          releaseNoteBuffer.writeln('  - ${element.commitMessage}');
+        }
+      }
 
       print(releaseNoteBuffer.toString());
     } catch (e) {
