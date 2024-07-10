@@ -39,7 +39,10 @@ buatlah file ctor.yaml dalam project kalian
 ```yaml
 email_jira: "YOUR EMAIL"
 token_jira: "YOUR TOKEN"
+ignore: 'merge,revert'
 ```
+
+fungsi `ignore` disini akan mengignore commit message merge / revert, anda bisa custom sesuai keinginan dengan pemisah coma.
 
 untuk mendapatkan token jira kalian bisa mengambil dari profile account masing-masing caranya:
 
