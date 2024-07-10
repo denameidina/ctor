@@ -1,6 +1,6 @@
 name: ctor
 description: CtoR is change your commit messages to release note.
-version: 0.0.1
+version: 0.0.2
 # repository: https://github.com/my_org/my_repo
 
 environment:
@@ -13,6 +13,7 @@ dependencies:
   http: ^1.2.1
   yaml: ^3.1.2
   equatable: ^2.0.5
+  collection: ^1.19.0
 
 dev_dependencies:
   lints: ^4.0.0

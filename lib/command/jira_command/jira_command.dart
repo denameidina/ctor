@@ -1,6 +1,8 @@
+// ignore_for_file: public_member_api_docs, sort_constructors_first
 import 'dart:convert';
 
 import 'package:args/command_runner.dart';
+import 'package:collection/collection.dart';
 import 'package:ctor/command/jira_command/jira_response.dart';
 import 'package:ctor/core/core.dart';
 import 'package:ctor/helper/status_helper.dart';
@@ -11,16 +13,18 @@ import 'package:path/path.dart';
 const String scheme = 'https';
 const String host = 'saas-telkomcorpu.atlassian.net';
 
-class JiraTicket {
-  JiraTicket({
-    this.code,
+class DataCommit {
+  DataCommit({
+    this.type,
+    this.jiraKey,
     required this.commitMessage,
-    this.isDone = false,
+    required this.fullCommit,
   });
 
-  final String? code;
+  final String? type;
+  final String? jiraKey;
   final String commitMessage;
-  final bool isDone;
+  final String fullCommit;
 }
 
 class ReleaseNote {
@@ -34,9 +38,12 @@ class ReleaseNote {
 
   String link() => "$scheme://$host/browse/$jiraKey";
 
-  String plain() => '$jiraKey: $summary';
+  String plain() =>
+      jiraKey == null ? summary.trim() : '$jiraKey: ${summary.trim()}';
 
-  String markdown() => '[$jiraKey](${link()}): $summary';
+  String markdown() => jiraKey == null
+      ? summary.trim()
+      : '[$jiraKey](${link()}): ${summary.trim()}';
 
   String output(String type) {
     switch (type) {
@@ -107,6 +114,7 @@ class JiraCommand extends Command {
     final token =
         argResults?['token']?.toString() ?? ctorYaml['token_jira']?.toString();
     final output = argResults?['output']?.toString() ?? 'markdown';
+    final commitIgnores = ctorYaml['ignore']?.toString().split(',');
 
     if ((email?.isEmpty ?? true) || (token?.isEmpty ?? true)) {
       StatusHelper.failed(
@@ -125,55 +133,138 @@ class JiraCommand extends Command {
     List<String> commits = rawCommits.toString().split('\n')
       ..removeWhere((element) => element.isEmpty);
 
-    final regExp = RegExp(r'(.+)\((\w+-\d+)\):\s(.+)');
-    final regExpWip = RegExp(r'(wip|WIP|Wip|)');
+    final regExpType = RegExp(
+        r'(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)');
+    final regExpJiraKey = RegExp(r'(\w+-\d+)');
 
-    final jiraTikets = commits.map((e) {
-      final match = regExp.firstMatch(e);
-      final isDone = !regExpWip.hasMatch(e);
-      final code = match?.group(2);
-      final commitMessage = match?.group(3) ?? e.split(':').last.trim();
+    List<DataCommit> dataCommits = [];
 
-      return JiraTicket(
-        code: code,
-        commitMessage: commitMessage,
-        isDone: isDone,
-      );
-    }).toList();
+    for (var commit in commits) {
+      final allMatch = regExpJiraKey.allMatches(commit);
+      final type = regExpType.firstMatch(commit)?.group(1);
+      final commitMessage = commit.split(':').last.trim();
 
-    final jqlJiraTiket = List<JiraTicket>.from(
-            jiraTikets.where((element) => element.code?.isNotEmpty ?? false))
-        .map((e) => e.code ?? '')
-        .toSet();
+      if (allMatch.isNotEmpty) {
+        for (var matchCode in allMatch) {
+          final code = matchCode.group(1);
 
-    final otherTicket = List<JiraTicket>.from(
-        jiraTikets.where((element) => element.code?.isEmpty ?? true));
+          dataCommits.add(DataCommit(
+            type: type,
+            jiraKey: code,
+            commitMessage: commitMessage,
+            fullCommit: commit,
+          ));
+        }
+      } else {
+        dataCommits.add(DataCommit(
+          type: type,
+          commitMessage: commitMessage,
+          fullCommit: commit,
+        ));
+      }
+    }
+
+    final jiraTickets = List<DataCommit>.from(
+        dataCommits.where((element) => element.jiraKey?.isNotEmpty ?? false));
+
+    final otherTickets = List<DataCommit>.from(
+      dataCommits.where(
+        (ticket) =>
+            ticket.jiraKey?.isEmpty ??
+            true &&
+                !(commitIgnores
+                        ?.where(
+                          (element) => ticket.fullCommit.contains(element),
+                        )
+                        .isNotEmpty ??
+                    false),
+      ),
+    );
 
     try {
       final response = await fetchJiraSearch(
-        keys: jqlJiraTiket,
+        keys: jiraTickets.map((e) => e.jiraKey ?? '').toSet(),
         authorization: getAuthorization(email ?? '', token ?? ''),
       );
 
       StringBuffer releaseNoteBuffer = StringBuffer();
 
-      Map<ReleaseNote, List<ReleaseNote>> groupedByParent =
-          groupByParent(response?.issues ?? []);
+      final added = groupByParent(
+          jiraTickets, otherTickets, response?.issues ?? [], RegExp(r'feat'));
+      final changed = groupByParent(jiraTickets, added.$3, added.$2,
+          RegExp(r'(refactor|style|perf|build)'));
+      final fixed =
+          groupByParent(jiraTickets, changed.$3, changed.$2, RegExp(r'fix'));
+      final removed =
+          groupByParent(jiraTickets, fixed.$3, fixed.$2, RegExp(r'revert'));
+      final other = groupByParent(jiraTickets, removed.$3, removed.$2, null);
 
-      // With Ticket
-      groupedByParent.forEach((parentReleaseNote, childrenReleaseNote) {
-        releaseNoteBuffer.writeln(parentReleaseNote.output(output));
-        for (var releaseNote in childrenReleaseNote) {
-          releaseNoteBuffer.writeln('  - ${releaseNote.output(output)}');
+      if (added.$1.isNotEmpty) {
+        releaseNoteBuffer.writeln('### Added');
+        for (var element in added.$1) {
+          // With Ticket
+          element.forEach((parentReleaseNote, childrenReleaseNote) {
+            releaseNoteBuffer.writeln('* ${parentReleaseNote.output(output)}');
+            for (var releaseNote in childrenReleaseNote) {
+              releaseNoteBuffer.writeln('  * ${releaseNote.output(output)}');
+            }
+          });
         }
-      });
-
-      // Other release note
-      if (otherTicket.isNotEmpty) {
         releaseNoteBuffer.writeln();
-        releaseNoteBuffer.writeln('Other');
-        for (var element in otherTicket) {
-          releaseNoteBuffer.writeln('  - ${element.commitMessage}');
+      }
+
+      if (changed.$1.isNotEmpty) {
+        releaseNoteBuffer.writeln('### Changed');
+        for (var element in changed.$1) {
+          // With Ticket
+          element.forEach((parentReleaseNote, childrenReleaseNote) {
+            releaseNoteBuffer.writeln('* ${parentReleaseNote.output(output)}');
+            for (var releaseNote in childrenReleaseNote) {
+              releaseNoteBuffer.writeln('  * ${releaseNote.output(output)}');
+            }
+          });
+        }
+        releaseNoteBuffer.writeln();
+      }
+
+      if (fixed.$1.isNotEmpty) {
+        releaseNoteBuffer.writeln('### Fixed');
+        for (var element in fixed.$1) {
+          // With Ticket
+          element.forEach((parentReleaseNote, childrenReleaseNote) {
+            releaseNoteBuffer.writeln('* ${parentReleaseNote.output(output)}');
+            for (var releaseNote in childrenReleaseNote) {
+              releaseNoteBuffer.writeln('  * ${releaseNote.output(output)}');
+            }
+          });
+        }
+        releaseNoteBuffer.writeln();
+      }
+
+      if (removed.$1.isNotEmpty) {
+        releaseNoteBuffer.writeln('### Removed');
+        for (var element in removed.$1) {
+          // With Ticket
+          element.forEach((parentReleaseNote, childrenReleaseNote) {
+            releaseNoteBuffer.writeln('* ${parentReleaseNote.output(output)}');
+            for (var releaseNote in childrenReleaseNote) {
+              releaseNoteBuffer.writeln('  * ${releaseNote.output(output)}');
+            }
+          });
+        }
+        releaseNoteBuffer.writeln();
+      }
+
+      if (other.$1.isNotEmpty) {
+        releaseNoteBuffer.writeln('### Other');
+        for (var element in other.$1) {
+          // With Ticket
+          element.forEach((parentReleaseNote, childrenReleaseNote) {
+            releaseNoteBuffer.writeln('* ${parentReleaseNote.output(output)}');
+            for (var releaseNote in childrenReleaseNote) {
+              releaseNoteBuffer.writeln('  * ${releaseNote.output(output)}');
+            }
+          });
         }
       }
 
@@ -183,13 +274,36 @@ class JiraCommand extends Command {
     }
   }
 
-  Map<ReleaseNote, List<ReleaseNote>> groupByParent(List<IssuesJira> issues) {
+  (
+    List<Map<ReleaseNote, List<ReleaseNote>>> result,
+    List<IssuesJira> remainingIssues,
+    List<DataCommit> remainingOtherTicket,
+  ) groupByParent(
+    List<DataCommit> jiraTickets,
+    List<DataCommit> otherTicket,
+    List<IssuesJira> issues,
+    RegExp? regExp,
+  ) {
+    List<IssuesJira> remainingIssues = [];
+    List<DataCommit> remainingOtherTicket = [];
+    List<Map<ReleaseNote, List<ReleaseNote>>> listOfGroupedIssue = [];
     Map<ReleaseNote, List<ReleaseNote>> groupedIssues = {};
 
+    // Jira
     for (var issue in issues) {
+      final hasMatchJira = jiraTickets.firstWhereOrNull((element) =>
+              element.jiraKey == issue.key &&
+              (regExp?.hasMatch(element.type ?? '') ?? false)) !=
+          null;
+
+      if (regExp != null && !hasMatchJira) {
+        remainingIssues.add(issue);
+        continue;
+      }
+
       final parentReleaseNote = ReleaseNote(
         jiraKey: issue.fields?.parent?.key,
-        summary: issue.fields?.parent?.fields?.summary ?? '',
+        summary: issue.fields?.parent?.fields?.summary ?? 'Parentless',
       );
 
       final childReleaseNote = ReleaseNote(
@@ -204,7 +318,27 @@ class JiraCommand extends Command {
       }
     }
 
-    return groupedIssues;
+    final otherReleaseNote = ReleaseNote(summary: 'Ticketless Jira');
+    for (var element in otherTicket) {
+      final hasMatch = regExp?.hasMatch(element.type ?? '') ?? false;
+
+      if (regExp != null && !hasMatch) {
+        remainingOtherTicket.add(element);
+        continue;
+      }
+
+      final childReleaseNote = ReleaseNote(summary: element.fullCommit);
+
+      if (groupedIssues.containsKey(otherReleaseNote)) {
+        groupedIssues[otherReleaseNote]?.add(childReleaseNote);
+      } else {
+        groupedIssues[otherReleaseNote] = [childReleaseNote];
+      }
+    }
+
+    if (groupedIssues.isNotEmpty) listOfGroupedIssue.add(groupedIssues);
+
+    return (listOfGroupedIssue, remainingIssues, remainingOtherTicket);
   }
 
   String getAuthorization(String email, String token) =>
