@@ -174,7 +174,9 @@ class JiraCommand extends Command {
             true &&
                 !(commitIgnores
                         ?.where(
-                          (element) => ticket.fullCommit.contains(element),
+                          (element) => ticket.fullCommit
+                              .toLowerCase()
+                              .contains(element.toLowerCase()),
                         )
                         .isNotEmpty ??
                     false),
