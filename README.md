@@ -40,9 +40,11 @@ buatlah file ctor.yaml dalam project kalian
 email_jira: "YOUR EMAIL"
 token_jira: "YOUR TOKEN"
 ignore: 'merge,revert'
+ignore_casesensitive: false
 ```
 
 fungsi `ignore` disini akan mengignore commit message merge / revert, anda bisa custom sesuai keinginan dengan pemisah coma.
+fungsi `ignore_casesensitive` disini akan membuat ignore menjadi casesensitive.
 
 untuk mendapatkan token jira kalian bisa mengambil dari profile account masing-masing caranya:
 
@@ -65,14 +67,16 @@ ctor jira -h
 Change commit messages to release note with implemented JIRA api
 
 Usage: ctor jira [arguments]
--h, --help                 Print this usage information.
--s, --start (mandatory)    Hash start commit
--e, --end                  Hash end commit
-                           (defaults to "HEAD")
-    --email                Email to identify your jira account
-    --token                Token to identify yout jira account
--o, --output               Output type
-                           [plain, markdown (default)]
+-h, --help                         Print this usage information.
+-s, --start (mandatory)            Hash start commit
+-e, --end                          Hash end commit
+                                   (defaults to "HEAD")
+    --email                        Email to identify your jira account
+    --token                        Token to identify yout jira account
+    --ignore                       Ignore commit message into release note separate with comma
+    --[no-]ignore-casesensitive    Ignore case sensitive
+-o, --output                       Output type
+                                   [plain, markdown (default)]
 
 Run "ctor help" to see global options.
 ```

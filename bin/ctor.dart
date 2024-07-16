@@ -4,7 +4,7 @@ import 'package:args/command_runner.dart';
 import 'package:ctor/command/jira_command/jira_command.dart';
 import 'package:ctor/core/core.dart';
 
-const String version = '0.0.3';
+const String version = '0.0.4';
 
 void main(List<String> arguments) {
   final runner = CommandRunner(

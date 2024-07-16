@@ -88,6 +88,15 @@ class JiraCommand extends Command {
       help: 'Token to identify yout jira account',
     );
     argParser.addOption(
+      'ignore',
+      help: 'Ignore commit message into release note separate with comma',
+    );
+    argParser.addFlag(
+      'ignore-casesensitive',
+      help: 'Ignore case sensitive',
+      defaultsTo: false,
+    );
+    argParser.addOption(
       'output',
       abbr: 'o',
       help: 'Output type',
@@ -114,7 +123,12 @@ class JiraCommand extends Command {
     final token =
         argResults?['token']?.toString() ?? ctorYaml['token_jira']?.toString();
     final output = argResults?['output']?.toString() ?? 'markdown';
-    final commitIgnores = ctorYaml['ignore']?.toString().split(',');
+    final commitIgnores = argResults?['ignore']?.toString().split(',') ??
+        ctorYaml['ignore']?.toString().split(',') ??
+        [];
+    final bool ignoreCasesensitive = argResults?['ignore-casesensitive'] ??
+        ctorYaml['ignore_casesensitive'] ??
+        false;
 
     if ((email?.isEmpty ?? true) || (token?.isEmpty ?? true)) {
       StatusHelper.failed(
@@ -164,23 +178,29 @@ class JiraCommand extends Command {
       }
     }
 
+    // remove ignore
+    if (commitIgnores.isNotEmpty) {
+      dataCommits.removeWhere(
+        (dataCommit) {
+          final data = commitIgnores.firstWhereOrNull((ignore) {
+            if (ignoreCasesensitive) {
+              return dataCommit.fullCommit.contains(ignore);
+            } else {
+              return dataCommit.fullCommit
+                  .toLowerCase()
+                  .contains(ignore.toLowerCase());
+            }
+          });
+          return data != null;
+        },
+      );
+    }
+
     final jiraTickets = List<DataCommit>.from(
         dataCommits.where((element) => element.jiraKey?.isNotEmpty ?? false));
 
     final otherTickets = List<DataCommit>.from(
-      dataCommits.where(
-        (ticket) =>
-            ticket.jiraKey?.isEmpty ??
-            true &&
-                !(commitIgnores
-                        ?.where(
-                          (element) => ticket.fullCommit
-                              .toLowerCase()
-                              .contains(element.toLowerCase()),
-                        )
-                        .isNotEmpty ??
-                    false),
-      ),
+      dataCommits.where((ticket) => ticket.jiraKey?.isEmpty ?? true),
     );
 
     try {
