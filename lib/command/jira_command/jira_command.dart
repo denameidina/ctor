@@ -100,7 +100,7 @@ class JiraCommand extends Command {
       'output',
       abbr: 'o',
       help: 'Output type',
-      allowed: ['plain', 'markdown'],
+      allowed: ['plain', 'markdown', 'list-jira'],
       defaultsTo: 'markdown',
     );
   }
@@ -208,6 +208,11 @@ class JiraCommand extends Command {
         keys: jiraTickets.map((e) => e.jiraKey ?? '').toSet(),
         authorization: getAuthorization(email ?? '', token ?? ''),
       );
+
+      if (output == 'list-jira') {
+        print(jiraTickets.map((e) => e.jiraKey ?? '').toSet().join(','));
+        return;
+      }
 
       StringBuffer releaseNoteBuffer = StringBuffer();
 
